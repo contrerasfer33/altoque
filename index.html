@@ -22,6 +22,9 @@
     --taupe:#6A7194; --focus:#0A22B0; --radius:10px; --radius-sm:6px;
     --act:#D5101C;
   }
+  /* Marca AlToque: la pantalla de carga y la de ingreso siempre usan estos colores.
+     Los colores de cada colegio (TemaColor... en la tabla config) se aplican solo dentro del panel, ya con la sesión iniciada. */
+  .entry, .splash{ --brand:#0D5C56; --brand-dark:#083F3B; --gold:#FFA630; --focus:#0D5C56; }
   *{box-sizing:border-box;}
   html,body{height:100%;}
   body{ margin:0; background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans', Arial, sans-serif; -webkit-font-smoothing:antialiased; }
@@ -301,7 +304,7 @@
   .splash.gone{ display:none; }
   .splash-icon{ width:84px; height:84px; animation:pop 1.4s ease-in-out infinite; }
   .splash-wm{ width:230px; height:auto; margin-top:10px; }
-  .splash-slogan{ font-family:'Caveat', cursive; font-size:24px; font-weight:600; color:#2A52A8; margin:0; }
+  .splash-slogan{ font-family:'Caveat', cursive; font-size:24px; font-weight:600; color:#0D5C56; margin:0; }
   .splash-bar{ width:150px; height:4px; background:var(--rule); border-radius:4px; overflow:hidden; margin-top:14px; }
   .splash-bar span{ display:block; height:100%; width:40%; background:var(--gold); border-radius:4px; animation:slide 1.1s ease-in-out infinite; }
   @keyframes pop{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.07);} }
