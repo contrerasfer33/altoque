@@ -41,10 +41,10 @@
     setStudentEmail: function(sid, t){ return rpc('set_student_email', { p_student:sid, p_text:t }); },
     removeStudent: function(id){ return rpc('remove_student', { p_id:id }); },
     getUsageData: function(){ return rpc('get_usage_data', {}); },
-    archivarRegistros: function(){ return rpc('proximamente', {}); },
-    getCounterSettings: function(){ return rpc('proximamente', {}); },
-    saveCounterSettings: function(){ return rpc('proximamente', {}); },
-    resetCounters: function(){ return rpc('proximamente', {}); }
+    archivarRegistros: function(hasta){ return rpc('archivar_registros', { p_hasta:hasta }); },
+    getCounterSettings: function(){ return rpc('get_counter_settings', {}); },
+    saveCounterSettings: function(payload){ return rpc('save_counter_settings', { p_data:payload }); },
+    resetCounters: function(){ return rpc('reset_counters', {}); }
   };
   function runServer(fnName){
     var args = Array.prototype.slice.call(arguments, 1);
@@ -578,7 +578,19 @@
     runServer('archivarRegistros', until).then(function(res){
       if(!res || !res.total){ st.textContent = 'No había datos hasta esa fecha. No se creó ningún archivo.'; return; }
       st.className = 'status-line ok';
-      st.innerHTML = 'Listo: '+res.registros+' registros, '+res.sesiones+' sesiones y '+res.accesos+' accesos archivados en <a target="_blank" href="'+escapeHtml(res.url)+'">'+escapeHtml(res.name)+'</a>.';
+      if(res.url){
+        st.innerHTML = 'Listo: '+res.registros+' registros, '+res.sesiones+' sesiones y '+res.accesos+' accesos archivados en <a target="_blank" href="'+escapeHtml(res.url)+'">'+escapeHtml(res.name)+'</a>.';
+      } else {
+        // Versión web: los datos quedan en las tablas *_archivo de Supabase y se descarga una copia en el computador.
+        var files = [];
+        if(res.records && res.records.length){ downloadCsv(res.records, 'registros-'+res.name+'.csv'); files.push('registros-'+res.name+'.csv'); }
+        if(res.exits && res.exits.length){
+          var xr = [['Fecha','Estudiante','Curso','Motivo','Salió','Volvió','Estado','Autorizó','Cerró','Alerta','Hora alerta','Alerta por']];
+          res.exits.forEach(function(s){ xr.push([fmtDateCL(s.date), s.studentName, s.courseName, s.motivo, s.time, s.returnTime||'', s.estado, s.byName||s.by, s.closedBy||'', s.alerta||'', s.alertaTime||'', s.alertaBy||'']); });
+          saveCsv(xr, 'salidas-'+res.name+'.csv'); files.push('salidas-'+res.name+'.csv');
+        }
+        st.textContent = 'Listo: '+res.registros+' registros, '+(res.salidas||0)+' salidas, '+res.sesiones+' sesiones y '+res.accesos+' accesos archivados. Quedan guardados en Supabase (tablas que terminan en _archivo)'+(files.length ? ' y se descargó una copia: '+files.join(', ')+'.' : '.');
+      }
       refreshData(true);
     }).catch(function(err){
       st.className = 'status-line err'; st.textContent = 'No se pudo archivar: '+errText(err);
