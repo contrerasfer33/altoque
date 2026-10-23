@@ -5,7 +5,7 @@
     { c:'#7A5E00', s:'#FFF1A8', short:'Fuera de sala' }
   ];
   var state = { courses:[], records:[], tipos:[], mail:{}, currentUser:{}, appUrl:'', selectedCourseId:null, currentTipo:null, unlocked:false,
-                salidas:[], exitCfg:{ motivos:[], sinAlerta:[], minAlerta:15, minAuto:5 }, liveVer:'', counter:null, clockOffset:0, snooze:{}, knownAlarms:{}, knownEnf:{}, knownReturn:{}, docentes:[], exitScreenOpen:false, enfScreenOpen:false };
+                salidas:[], exitCfg:{ motivos:[], sinAlerta:[], minAlerta:10, minAuto:5 }, liveVer:'', counter:null, clockOffset:0, snooze:{}, knownAlarms:{}, knownEnf:{}, knownReturn:{}, docentes:[], exitScreenOpen:false, enfScreenOpen:false };
   function $(id){ return document.getElementById(id); }
   // ---------- conexión con el servidor (Supabase) ----------
   var CFG = window.ALTOQUE_CONFIG || {};
@@ -25,7 +25,8 @@
     getLive: function(v){ return rpc('get_live', { p_ver:v || '' }); },
     registrar: function(cid, cn, sid, sn, tipo){ return rpc('registrar', { p_student:sid, p_tipo:tipo }); },
     undoRecord: function(id){ return rpc('undo_record', { p_id:id }); },
-    autorizarSalida: function(sid, m){ return rpc('autorizar_salida', { p_student:sid, p_motivo:m }); },
+    autorizarSalida: function(sid, m, confirm){ return rpc('autorizar_salida', { p_student:sid, p_motivo:m, p_confirm:!!confirm }); },
+    setStudentGender: function(sid, g){ return rpc('set_student_gender', { p_student:sid, p_gender:g }); },
     marcarRegreso: function(id){ return rpc('marcar_regreso', { p_id:id }); },
     reportarNoRegreso: function(id){ return rpc('reportar_no_regreso', { p_id:id }); },
     enfLlego: function(id){ return rpc('enf_llego', { p_id:id }); },
@@ -488,7 +489,15 @@
       row.innerHTML = '<span>'+escapeHtml(s.name) +
         '<span class="em">Apoderado: '+(s.guardianEmail ? escapeHtml(s.guardianEmail) : 'sin correo')+'</span>' +
         '<span class="em">Estudiante: '+(s.studentEmail ? escapeHtml(s.studentEmail) : 'sin correo')+'</span></span>' +
-        '<span class="acts"><button type="button" class="b-mail">Apoderado</button><button type="button" class="b-smail">Estudiante</button><button type="button" class="b-del">Quitar</button></span>';
+        '<span class="acts"><button type="button" class="b-gen" title="Género (para el límite de baño)"></button><button type="button" class="b-mail">Apoderado</button><button type="button" class="b-smail">Estudiante</button><button type="button" class="b-del">Quitar</button></span>';
+      var bg = row.querySelector('.b-gen');
+      function paintGen(){ bg.textContent = s.gender === 'F' ? 'Niña' : (s.gender === 'M' ? 'Niño' : 'Género ?'); }
+      paintGen();
+      bg.onclick = function(){
+        var next = s.gender === 'F' ? 'M' : (s.gender === 'M' ? '' : 'F');
+        runServer('setStudentGender', s.id, next).then(function(saved){ s.gender = saved; paintGen(); })
+          .catch(function(err){ toast(errText(err), true); });
+      };
       row.querySelector('.b-mail').onclick = function(){
         var v = prompt('Correo del apoderado de '+s.name+' (puedes poner dos separados por coma):', s.guardianEmail || '');
         if(v === null) return;
@@ -547,7 +556,7 @@
       (res.added || []).forEach(function(s){ course.students.push(s); });
       (res.updated || []).forEach(function(u){
         var st = course.students.find(function(x){ return x.id === u.id; });
-        if(st){ st.guardianEmail = u.guardianEmail; st.studentEmail = u.studentEmail; }
+        if(st){ st.guardianEmail = u.guardianEmail; st.studentEmail = u.studentEmail; if(u.gender != null) st.gender = u.gender; }
       });
       ta.value = '';
       renderRoster(); renderAll();
@@ -1195,7 +1204,7 @@
     if(ph === 'transit'){ if(e >= ec.minLlegada) return 'late'; if(e >= Math.max(1, ec.minLlegada - 2)) return 'warn'; return 'health'; }
     if(ph === 'returning'){ if(e >= ec.minRegreso) return 'late'; if(e >= Math.max(1, ec.minRegreso - 2)) return 'warn'; return 'ok'; }
     if(isExempt(s)) return 'health';
-    var lim = state.exitCfg.minAlerta || 15;
+    var lim = state.exitCfg.minAlerta || 10;
     if(e >= lim) return 'late';
     if(e >= Math.max(1, lim - 5)) return 'warn';
     return 'ok';
@@ -1242,7 +1251,7 @@
       b.className = 'motivo-btn';
       var exempt = (state.exitCfg.sinAlerta || []).indexOf(m.toLowerCase()) >= 0;
       var enfm = /^enfermer/i.test(m) && enfCfg().active;
-      b.innerHTML = '<span>'+escapeHtml(m)+'</span>'+(enfm ? '<small>avisa a Enfermería · '+enfCfg().minLlegada+' min para llegar</small>' : (exempt ? '<small>sin límite de tiempo</small>' : '<small>aviso a los '+(state.exitCfg.minAlerta||15)+' min</small>'));
+      b.innerHTML = '<span>'+escapeHtml(m)+'</span>'+(enfm ? '<small>avisa a Enfermería · '+enfCfg().minLlegada+' min para llegar</small>' : (exempt ? '<small>sin límite de tiempo</small>' : '<small>aviso a los '+(state.exitCfg.minAlerta||10)+' min'+(/^ba(ñ|n)o/i.test(m) ? ' · 1 por género a la vez' : '')+'</small>'));
       b.onclick = function(){ var p = exitPick; $('overlayExit').classList.add('hidden'); exitPick = null; if(p) doAuthorize(p.course, p.student, m); };
       box.appendChild(b);
     });
@@ -1255,12 +1264,20 @@
     state.salidas = state.salidas.filter(function(x){ return x.id !== oldId; }).map(function(x){ if(x.id === sal.id){ found = true; return sal; } return x; });
     if(!found) state.salidas.push(sal);
   }
-  function doAuthorize(course, student, motivo){
+  function doAuthorize(course, student, motivo, confirmed){
     var tmp = { id:'tmp'+Date.now(), date:todayStr(), time:nowHHMM(), courseId:course.id, courseName:course.name, studentId:student.id, studentName:student.name,
                 motivo:motivo, by:String(state.currentUser.email||'').toLowerCase(), byName:state.currentUser.name||state.currentUser.email, estado:'Afuera', alerta:'', pending:true };
     state.salidas.push(tmp);
     renderAll();
-    runServer('autorizarSalida', student.id, motivo).then(function(sal){
+    runServer('autorizarSalida', student.id, motivo, !!confirmed).then(function(sal){
+      if(sal && sal.conflict){
+        state.salidas = state.salidas.filter(function(x){ return x.id !== tmp.id; });
+        renderAll();
+        var quien = sal.genero === 'F' ? 'otra niña' : 'otro niño';
+        var ok = confirm('Ya hay '+quien+' de este curso en el baño: '+sal.otherName+' (desde las '+sal.otherTime+').\n\nLo normal es 1 por género a la vez. ¿Autorizar la salida de '+student.name+' de todas formas?');
+        if(ok) doAuthorize(course, student, motivo, true);
+        return;
+      }
       replaceSalida(tmp.id, sal);
       renderAll();
       toast(sal.already ? student.name+' ya figuraba afuera ('+sal.motivo+' desde las '+sal.time+').' : student.name+': salida autorizada ('+motivo+').');
@@ -1331,7 +1348,7 @@
     }
     if(!cands.length && !isEnfOnly()){
       mode = 'sala';
-      var lim = state.exitCfg.minAlerta || 15;
+      var lim = state.exitCfg.minAlerta || 10;
       cands = state.salidas.filter(function(s){
         if(!stillPending(s, 'sala') || isExempt(s) || String(s.id).indexOf('tmp') === 0) return false;
         if(state.snooze[s.id] && state.snooze[s.id] > now) return false;
@@ -1369,7 +1386,7 @@
       $('ovLater').classList.add('hidden');
       return;
     }
-    var auto = (state.exitCfg.minAlerta||15) + (state.exitCfg.minAuto||5);
+    var auto = (state.exitCfg.minAlerta||10) + (state.exitCfg.minAuto||5);
     $('ovTitle').textContent = '¿'+s.studentName+' ya volvió a la sala?';
     $('ovText').innerHTML = escapeHtml(s.courseName)+' · Salió a <b>'+escapeHtml(s.motivo)+'</b> a las '+s.time+', autorizado/a por '+escapeHtml(s.byName||s.by)+'.<br>Han pasado <b>'+minTxt(elapsedMin(s))+'</b>. Verifica si volvió.';
     $('ovNote').textContent = 'Si nadie responde, la alarma se enviará sola a Convivencia a los '+auto+' minutos de la salida.';
@@ -1493,7 +1510,7 @@
     var alarms = out.filter(function(s){ return !!alarmOf(s); }).sort(function(a,b){ return elapsedMin(b) - elapsedMin(a); });
     var rest = out.filter(function(s){ return !alarmOf(s); }).sort(function(a,b){ return elapsedMin(b) - elapsedMin(a); });
     var back = list.filter(function(s){ return s.estado !== 'Afuera'; }).sort(function(a,b){ return String(b.returnTime||'').localeCompare(String(a.returnTime||'')); });
-    var lim = state.exitCfg.minAlerta || 15;
+    var lim = state.exitCfg.minAlerta || 10;
     var late = out.filter(function(s){ return exitLevel(s) === 'late'; }).length;
     $('xsClock').textContent = nowHHMM();
     $('xsSub').textContent = 'Hoy, '+fmtDateCL(todayStr())+' · se actualiza sola cada pocos segundos';
